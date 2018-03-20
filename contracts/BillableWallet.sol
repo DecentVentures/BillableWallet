@@ -5,6 +5,7 @@ contract BillableWallet {
   struct Bill {
     uint amount;
     address biller;
+    uint createdAt;
   }
 
   struct Authorization {
@@ -20,8 +21,8 @@ contract BillableWallet {
 
   address public owner;
 
-  Bill[] pendingBills;
-  Bill[] paidBills;
+  Bill[] public pendingBills;
+  Bill[] public paidBills;
   mapping(address => Authorization) authorizations;
   mapping(address => BillerProfile) billerProfiles;
 
@@ -30,9 +31,9 @@ contract BillableWallet {
     owner = creator;
   }
 
-  function authorizedFor(uint amount, address biller) public {
-    BillerProfile billerProfile = billerProfiles[biller];
-    Authorization auth = authorizations[biller];
+  function authorizedFor(uint amount, address biller) view public returns(bool) {
+    BillerProfile storage billerProfile = billerProfiles[biller];
+    Authorization storage auth = authorizations[biller];
     uint lastBillTime = billerProfile.lastAuthorized;
     uint waitTime = auth.waitTime;
     uint minTime = lastBillTime + waitTime;
@@ -41,7 +42,7 @@ contract BillableWallet {
 
   function markPaid(uint pendingBillIndex) internal {
     uint length = pendingBills.length;
-    Bill paidBill = pendingBills[pendingBillIndex];
+    Bill storage paidBill = pendingBills[pendingBillIndex];
     pendingBills[pendingBillIndex] = pendingBills[length - 1];
     delete pendingBills[length - 1];
     pendingBills.length--;
@@ -49,14 +50,16 @@ contract BillableWallet {
     billerProfiles[paidBill.biller].lastPaid = now;
   }
 
-  function bill(uint amount) public {
-    billerProfile[msg.sender].lastBilled = now;
-    pendingBills.push(Bill(amount, msg.sender));
-    if(authorizedFor(amount, msg.sender) && this.balance > amount) {
-      billerProfile[msg.sender].lastAuthorized = now;
+  function bill(uint amount) external returns(bool) {
+    billerProfiles[msg.sender].lastBilled = now;
+    pendingBills.push(Bill(amount, msg.sender, now));
+    if(authorizedFor(amount, msg.sender) && address(this).balance > amount) {
+      billerProfiles[msg.sender].lastAuthorized = now;
       markPaid(pendingBills.length -1);
       msg.sender.transfer(amount);
+      return true;
     }
+    return false;
   }
 
   modifier ownerOnly() {
@@ -66,7 +69,7 @@ contract BillableWallet {
 
   function approve(uint pendingBillIndex) public ownerOnly {
     uint billAmt = pendingBills[pendingBillIndex].amount;
-    if(msg.sender == owner && this.balance > billAmt) {
+    if(msg.sender == owner && address(this).balance > billAmt) {
       markPaid(pendingBillIndex);
       msg.sender.transfer(billAmt);
     }
@@ -80,5 +83,3 @@ contract BillableWallet {
     to.transfer(amount);
   }
 }
-
-
